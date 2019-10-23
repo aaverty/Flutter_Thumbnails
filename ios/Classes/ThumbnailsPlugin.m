@@ -12,43 +12,43 @@
 }
 
 - (void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result {
-  if ([@"getPlatformVersion" isEqualToString:call.method]) {
-    result([@"iOS " stringByAppendingString:[[UIDevice currentDevice] systemVersion]]);
-  } else if ([@"getThumbnail" isEqualToString:call.method]) {
-      @try {
-          NSString *filepath = call.arguments[@"videoFilePath"];
-          filepath = [filepath stringByReplacingOccurrencesOfString:@"file://"
-                                                         withString:@""];
-          NSURL *videoURL = [NSURL fileURLWithPath:filepath];
-          
-          MPMoviePlayerController *moviePlayer = [[MPMoviePlayerController alloc]
-                                                  initWithContentURL:videoURL];
-          moviePlayer.shouldAutoplay = NO;
-          UIImage *thumbnail = [moviePlayer thumbnailImageAtTime:1.0
-                                                      timeOption:MPMovieTimeOptionNearestKeyFrame];
-          // save to document directory
-          NSString* documentDirectory = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,
-                                                                         NSUserDomainMask,
-                                                                         YES) lastObject];
-          if (thumbnail != nil) {
-              NSData *data = UIImageJPEGRepresentation(thumbnail, 1.0);
-              NSFileManager *fileManager = [NSFileManager defaultManager];
-              NSString *fullPath = [documentDirectory stringByAppendingPathComponent: [NSString stringWithFormat:@"thumb-%@.jpg", [[NSProcessInfo processInfo] globallyUniqueString]]];
-              bool fileIsWrited = [fileManager createFileAtPath:fullPath contents:data attributes:nil];
-              if (result && fileIsWrited) {
-                  result(fullPath);
-              } else {
-                  result(@"An error occurs when try to write the output image file");
-              }
-          } else {
-              result(@"An error occurs when try to extract image from video");
-          }
-      } @catch(NSException *e) {
-          result(@{@"error": e.reason});
-      }
-  } else {
-    result(FlutterMethodNotImplemented);
-  }
+    if ([@"getPlatformVersion" isEqualToString:call.method]) {
+        result([@"iOS " stringByAppendingString:[[UIDevice currentDevice] systemVersion]]);
+    } else if ([@"getThumbnail" isEqualToString:call.method]) {
+        result([self imageFromVideoURL:call.arguments[@"videoFilePath"]]);
+    } else {
+        result(FlutterMethodNotImplemented);
+    }
 }
 
+- (NSString *)imageFromVideoURL:(NSString *)contentPath {
+    NSURL *videoURL = [NSURL fileURLWithPath:contentPath];
+
+    AVAsset *asset = [AVAsset assetWithURL:videoURL];
+
+    //  Get thumbnail at the very start of the video
+    CMTime thumbnailTime = CMTimeMake(60, 60);
+    //    thumbnailTime.value = 0.2;
+
+    //  Get image from the video at the given time
+    AVAssetImageGenerator *imageGenerator = [[AVAssetImageGenerator alloc] initWithAsset:asset];
+    imageGenerator.appliesPreferredTrackTransform = YES;
+    imageGenerator.maximumSize = CGSizeMake(1024, 768);
+
+    CGImageRef imageRef = [imageGenerator copyCGImageAtTime:thumbnailTime actualTime:NULL error:NULL];
+    UIImage *thumbnail = [UIImage imageWithCGImage:imageRef];
+    if (thumbnail != nil){
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,
+                                                             NSUserDomainMask, YES);
+        NSString *documentsDirectory = [paths objectAtIndex:0];
+        NSString* pathTemp = [documentsDirectory stringByAppendingPathComponent:videoURL.lastPathComponent.stringByDeletingPathExtension];
+        NSString* path = [pathTemp stringByAppendingString:@"_thumb.jpeg" ];
+        NSData* data = UIImageJPEGRepresentation(thumbnail, 1);
+        [data writeToFile:path atomically:NO];
+
+        return path;
+    } else {
+        return @"No file created";
+    }
+}
 @end
